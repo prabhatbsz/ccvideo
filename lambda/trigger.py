@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 import uuid
@@ -11,6 +12,8 @@ import boto3
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
 
 step_functions = boto3.client("stepfunctions")
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def build_job_name(object_key: str) -> str:
@@ -25,11 +28,15 @@ def lambda_handler(event, context):
     captions_bucket = os.environ["CAPTIONS_BUCKET"]
     output_prefix = os.environ.get("OUTPUT_PREFIX", "captions/").strip("/")
 
+    records = event.get("Records", [])
+    logger.info("Received event with %d record(s)", len(records))
+
     started = []
     skipped = []
 
-    for record in event.get("Records", []):
+    for record in records:
         if record.get("eventSource") != "aws:s3":
+            logger.info("Skipping non-S3 event source: %s", record.get("eventSource"))
             continue
 
         bucket = record["s3"]["bucket"]["name"]
@@ -37,8 +44,11 @@ def lambda_handler(event, context):
         object_key = unquote_plus(raw_key)
         extension = Path(object_key).suffix.lower()
 
+        logger.info("Processing object s3://%s/%s (extension=%s)", bucket, object_key, extension)
+
         if extension not in VIDEO_EXTENSIONS:
             skipped.append(object_key)
+            logger.info("Skipping unsupported file type for key: %s", object_key)
             continue
 
         job_base_name = build_job_name(object_key)
@@ -62,7 +72,15 @@ def lambda_handler(event, context):
             name=execution_name,
             input=json.dumps(execution_input),
         )
+        logger.info(
+            "Started Step Functions execution '%s' for object s3://%s/%s",
+            execution_name,
+            bucket,
+            object_key,
+        )
         started.extend([english_job_name, hindi_job_name])
+
+    logger.info("Lambda processing summary: started_jobs=%s skipped_objects=%s", started, skipped)
 
     return {
         "started_jobs": started,
