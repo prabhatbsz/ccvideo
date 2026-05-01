@@ -10,12 +10,12 @@ output "captions_output_bucket_name" {
 
 output "caption_pipeline_state_machine_arn" {
   description = "Step Functions state machine ARN orchestrating the caption workflow."
-  value       = aws_sfn_state_machine.caption_pipeline.arn
+  value       = local.caption_pipeline_state_machine_arn
 }
 
 output "upload_trigger_lambda_name" {
   description = "Lambda function name invoked by S3 uploads."
-  value       = aws_lambda_function.video_ingest_trigger.function_name
+  value       = local.video_ingest_trigger_lambda_name
 }
 
 output "notification_topic_arn" {

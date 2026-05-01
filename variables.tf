@@ -64,6 +64,18 @@ variable "create_step_functions_role" {
   default     = true
 }
 
+variable "create_state_machine" {
+  description = "Create the Step Functions state machine when true; when false, reuse existing_state_machine_arn."
+  type        = bool
+  default     = true
+}
+
+variable "existing_state_machine_arn" {
+  description = "Existing Step Functions state machine ARN to reuse when create_state_machine is false."
+  type        = string
+  default     = null
+}
+
 variable "existing_step_functions_role_name" {
   description = "Existing Step Functions IAM role name to reuse when create_step_functions_role is false."
   type        = string
@@ -74,6 +86,24 @@ variable "create_lambda_role" {
   description = "Create the Lambda IAM role when true; when false, reuse existing_lambda_role_name."
   type        = bool
   default     = true
+}
+
+variable "create_lambda_function" {
+  description = "Create the Lambda trigger function when true; when false, reuse existing_lambda_function_name or existing_lambda_function_arn."
+  type        = bool
+  default     = true
+}
+
+variable "existing_lambda_function_name" {
+  description = "Existing Lambda function name to reuse when create_lambda_function is false."
+  type        = string
+  default     = null
+}
+
+variable "existing_lambda_function_arn" {
+  description = "Existing Lambda function ARN to reuse when create_lambda_function is false."
+  type        = string
+  default     = null
 }
 
 variable "existing_lambda_role_name" {

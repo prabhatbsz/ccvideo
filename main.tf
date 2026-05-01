@@ -64,9 +64,12 @@ locals {
   captions_bucket_name     = coalesce(var.captions_bucket_name, lower("${local.name_prefix}-${data.aws_caller_identity.current.account_id}-captions"))
   sns_topic_name           = "${local.name_prefix}-caption-events"
   lambda_name              = "${local.name_prefix}-video-trigger"
+  lambda_function_name     = coalesce(var.existing_lambda_function_name, "${local.name_prefix}-video-trigger")
   step_function_name       = "${local.name_prefix}-caption-pipeline"
   step_functions_role_name = coalesce(var.existing_step_functions_role_name, "${local.step_function_name}-role")
   lambda_role_name         = coalesce(var.existing_lambda_role_name, "${local.lambda_name}-role")
+  state_machine_arn        = coalesce(var.existing_state_machine_arn, "arn:aws:states:${var.aws_region}:${data.aws_caller_identity.current.account_id}:stateMachine:${local.step_function_name}")
+  lambda_function_arn      = coalesce(var.existing_lambda_function_arn, "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.lambda_function_name}")
 }
 
 resource "aws_s3_bucket" "video_input" {
@@ -234,6 +237,7 @@ resource "aws_iam_role_policy" "step_functions" {
 }
 
 resource "aws_sfn_state_machine" "caption_pipeline" {
+  count    = var.create_state_machine ? 1 : 0
   name     = local.step_function_name
   role_arn = local.step_functions_role_arn
 
@@ -402,6 +406,10 @@ resource "aws_sfn_state_machine" "caption_pipeline" {
   tags = local.default_tags
 }
 
+locals {
+  caption_pipeline_state_machine_arn = var.create_state_machine ? aws_sfn_state_machine.caption_pipeline[0].arn : local.state_machine_arn
+}
+
 resource "aws_iam_role" "lambda" {
   count              = var.create_lambda_role ? 1 : 0
   name               = local.lambda_role_name
@@ -440,14 +448,15 @@ resource "aws_iam_role_policy" "lambda" {
         Action = [
           "states:StartExecution"
         ]
-        Resource = aws_sfn_state_machine.caption_pipeline.arn
+        Resource = local.caption_pipeline_state_machine_arn
       }
     ]
   })
 }
 
 resource "aws_lambda_function" "video_ingest_trigger" {
-  function_name    = local.lambda_name
+  count            = var.create_lambda_function ? 1 : 0
+  function_name    = local.lambda_function_name
   role             = local.lambda_role_arn
   handler          = "trigger.lambda_handler"
   runtime          = "python3.12"
@@ -457,7 +466,7 @@ resource "aws_lambda_function" "video_ingest_trigger" {
 
   environment {
     variables = {
-      STATE_MACHINE_ARN = aws_sfn_state_machine.caption_pipeline.arn
+      STATE_MACHINE_ARN = local.caption_pipeline_state_machine_arn
       CAPTIONS_BUCKET   = local.video_input_bucket_name
       OUTPUT_PREFIX     = var.output_prefix
     }
@@ -466,19 +475,24 @@ resource "aws_lambda_function" "video_ingest_trigger" {
   tags = local.default_tags
 }
 
+locals {
+  video_ingest_trigger_lambda_name = var.create_lambda_function ? aws_lambda_function.video_ingest_trigger[0].function_name : local.lambda_function_name
+  video_ingest_trigger_lambda_arn  = var.create_lambda_function ? aws_lambda_function.video_ingest_trigger[0].arn : local.lambda_function_arn
+}
+
 resource "aws_lambda_permission" "allow_s3" {
-  statement_id  = "AllowExecutionFromS3"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.video_ingest_trigger.function_name
-  principal     = "s3.amazonaws.com"
-  source_arn    = local.captions_output_bucket_arn
+  statement_id_prefix = "AllowExecutionFromS3-"
+  action              = "lambda:InvokeFunction"
+  function_name       = local.video_ingest_trigger_lambda_name
+  principal           = "s3.amazonaws.com"
+  source_arn          = local.captions_output_bucket_arn
 }
 
 resource "aws_s3_bucket_notification" "video_uploads" {
   bucket = local.captions_output_bucket_id
 
   lambda_function {
-    lambda_function_arn = aws_lambda_function.video_ingest_trigger.arn
+    lambda_function_arn = local.video_ingest_trigger_lambda_arn
     events              = ["s3:ObjectCreated:*"]
   }
 
