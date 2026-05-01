@@ -42,6 +42,30 @@ data "aws_iam_policy_document" "captions_public_read" {
   }
 }
 
+data "aws_iam_policy_document" "transcribe_output_bucket" {
+  statement {
+    sid    = "AllowTranscribeGetObject"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["transcribe.amazonaws.com"]
+    }
+    actions   = ["s3:GetObject"]
+    resources = ["${local.captions_output_bucket_arn}/*"]
+  }
+
+  statement {
+    sid    = "AllowTranscribePutObject"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["transcribe.amazonaws.com"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${local.video_input_bucket_arn}/*"]
+  }
+}
+
 data "archive_file" "lambda_zip" {
   type        = "zip"
   source_file = "${path.module}/lambda/trigger.py"
@@ -154,9 +178,16 @@ resource "aws_s3_bucket_public_access_block" "video_input" {
   bucket = local.video_input_bucket_id
 
   block_public_acls       = true
-  block_public_policy     = true
+  block_public_policy     = false
   ignore_public_acls      = true
-  restrict_public_buckets = true
+  restrict_public_buckets = false
+}
+
+resource "aws_s3_bucket_policy" "transcribe_output" {
+  bucket = local.video_input_bucket_id
+  policy = data.aws_iam_policy_document.transcribe_output_bucket.json
+
+  depends_on = [aws_s3_bucket_public_access_block.video_input]
 }
 
 resource "aws_s3_bucket_public_access_block" "captions_output" {
@@ -224,6 +255,16 @@ resource "aws_iam_role_policy" "step_functions" {
           "transcribe:GetTranscriptionJob"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = "${local.captions_output_bucket_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:PutObject"]
+        Resource = "${local.video_input_bucket_arn}/*"
       },
       {
         Effect = "Allow"
