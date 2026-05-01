@@ -77,6 +77,7 @@ def lambda_handler(event, context):
             "input_key": object_key,
             "media_uri": f"s3://{bucket}/{object_key}",
             "captions_bucket": captions_bucket,
+            "output_prefix": f"{output_prefix}/{job_base_name}/",
             "english_job_name": english_job_name,
             "hindi_job_name": hindi_job_name,
             "english_output_prefix": f"{output_prefix}/{job_base_name}/english/",

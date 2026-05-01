@@ -44,6 +44,20 @@ data "aws_iam_policy_document" "captions_public_read" {
 
 data "aws_iam_policy_document" "transcribe_output_bucket" {
   statement {
+    sid    = "AllowTranscribeBucketAccess"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["transcribe.amazonaws.com"]
+    }
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket"
+    ]
+    resources = [local.video_input_bucket_arn]
+  }
+
+  statement {
     sid    = "AllowTranscribePutObject"
     effect = "Allow"
     principals {
