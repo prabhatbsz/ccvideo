@@ -1,10 +1,10 @@
 output "video_input_bucket_name" {
-  description = "S3 bucket name where videos must be uploaded to trigger caption generation."
+  description = "S3 bucket name where generated subtitle files are written."
   value       = aws_s3_bucket.video_input.bucket
 }
 
 output "captions_output_bucket_name" {
-  description = "S3 bucket name where Amazon Transcribe stores the generated subtitle files."
+  description = "S3 bucket name where video uploads trigger caption generation."
   value       = aws_s3_bucket.captions_output.bucket
 }
 

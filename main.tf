@@ -91,7 +91,7 @@ resource "aws_s3_bucket_versioning" "video_input" {
   bucket = aws_s3_bucket.video_input.id
 
   versioning_configuration {
-    status = "Enabled"
+    status = "Suspended"
   }
 }
 
@@ -99,7 +99,7 @@ resource "aws_s3_bucket_versioning" "captions_output" {
   bucket = aws_s3_bucket.captions_output.id
 
   versioning_configuration {
-    status = "Enabled"
+    status = "Suspended"
   }
 }
 
@@ -205,62 +205,146 @@ resource "aws_sfn_state_machine" "caption_pipeline" {
 
   definition = jsonencode({
     Comment = "Automated caption generation workflow for uploaded videos"
-    StartAt = "StartTranscriptionJob"
+    StartAt = "RunLanguageJobs"
     States = {
-      StartTranscriptionJob = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::aws-sdk:transcribe:startTranscriptionJob"
-        Parameters = {
-          "TranscriptionJobName.$" = "$.job_name"
-          Media = {
-            "MediaFileUri.$" = "$.media_uri"
-          }
-          IdentifyLanguage     = true
-          "OutputBucketName.$" = "$.captions_bucket"
-          "OutputKey.$"        = "$.output_prefix"
-          Subtitles = {
-            Formats = ["srt", "vtt"]
-          }
-        }
-        Next = "WaitForTranscription"
-      }
-      WaitForTranscription = {
-        Type    = "Wait"
-        Seconds = var.polling_wait_seconds
-        Next    = "GetTranscriptionJob"
-      }
-      GetTranscriptionJob = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::aws-sdk:transcribe:getTranscriptionJob"
-        Parameters = {
-          "TranscriptionJobName.$" = "$.job_name"
-        }
-        ResultPath = "$.job_details"
-        Next       = "CheckTranscriptionStatus"
-      }
-      CheckTranscriptionStatus = {
-        Type = "Choice"
-        Choices = [
+      RunLanguageJobs = {
+        Type = "Parallel"
+        Branches = [
           {
-            Variable     = "$.job_details.TranscriptionJob.TranscriptionJobStatus"
-            StringEquals = "COMPLETED"
-            Next         = "PublishSuccess"
+            StartAt = "StartEnglishTranscription"
+            States = {
+              StartEnglishTranscription = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:transcribe:startTranscriptionJob"
+                Parameters = {
+                  "TranscriptionJobName.$" = "$.english_job_name"
+                  Media = {
+                    "MediaFileUri.$" = "$.media_uri"
+                  }
+                  LanguageCode         = "en-US"
+                  "OutputBucketName.$" = "$.captions_bucket"
+                  "OutputKey.$"        = "$.english_output_prefix"
+                  Subtitles = {
+                    Formats = ["srt", "vtt"]
+                  }
+                }
+                Next = "WaitForEnglishTranscription"
+              }
+              WaitForEnglishTranscription = {
+                Type    = "Wait"
+                Seconds = var.polling_wait_seconds
+                Next    = "GetEnglishTranscription"
+              }
+              GetEnglishTranscription = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:transcribe:getTranscriptionJob"
+                Parameters = {
+                  "TranscriptionJobName.$" = "$.english_job_name"
+                }
+                ResultPath = "$.english_job_details"
+                Next       = "CheckEnglishStatus"
+              }
+              CheckEnglishStatus = {
+                Type = "Choice"
+                Choices = [
+                  {
+                    Variable     = "$.english_job_details.TranscriptionJob.TranscriptionJobStatus"
+                    StringEquals = "COMPLETED"
+                    Next         = "EnglishCompleted"
+                  },
+                  {
+                    Variable     = "$.english_job_details.TranscriptionJob.TranscriptionJobStatus"
+                    StringEquals = "FAILED"
+                    Next         = "EnglishFailed"
+                  }
+                ]
+                Default = "WaitForEnglishTranscription"
+              }
+              EnglishCompleted = {
+                Type = "Succeed"
+              }
+              EnglishFailed = {
+                Type  = "Fail"
+                Error = "EnglishTranscriptionFailed"
+              }
+            }
           },
           {
-            Variable     = "$.job_details.TranscriptionJob.TranscriptionJobStatus"
-            StringEquals = "FAILED"
-            Next         = "PublishFailure"
+            StartAt = "StartHindiTranscription"
+            States = {
+              StartHindiTranscription = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:transcribe:startTranscriptionJob"
+                Parameters = {
+                  "TranscriptionJobName.$" = "$.hindi_job_name"
+                  Media = {
+                    "MediaFileUri.$" = "$.media_uri"
+                  }
+                  LanguageCode         = "hi-IN"
+                  "OutputBucketName.$" = "$.captions_bucket"
+                  "OutputKey.$"        = "$.hindi_output_prefix"
+                  Subtitles = {
+                    Formats = ["srt", "vtt"]
+                  }
+                }
+                Next = "WaitForHindiTranscription"
+              }
+              WaitForHindiTranscription = {
+                Type    = "Wait"
+                Seconds = var.polling_wait_seconds
+                Next    = "GetHindiTranscription"
+              }
+              GetHindiTranscription = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:transcribe:getTranscriptionJob"
+                Parameters = {
+                  "TranscriptionJobName.$" = "$.hindi_job_name"
+                }
+                ResultPath = "$.hindi_job_details"
+                Next       = "CheckHindiStatus"
+              }
+              CheckHindiStatus = {
+                Type = "Choice"
+                Choices = [
+                  {
+                    Variable     = "$.hindi_job_details.TranscriptionJob.TranscriptionJobStatus"
+                    StringEquals = "COMPLETED"
+                    Next         = "HindiCompleted"
+                  },
+                  {
+                    Variable     = "$.hindi_job_details.TranscriptionJob.TranscriptionJobStatus"
+                    StringEquals = "FAILED"
+                    Next         = "HindiFailed"
+                  }
+                ]
+                Default = "WaitForHindiTranscription"
+              }
+              HindiCompleted = {
+                Type = "Succeed"
+              }
+              HindiFailed = {
+                Type  = "Fail"
+                Error = "HindiTranscriptionFailed"
+              }
+            }
           }
         ]
-        Default = "WaitForTranscription"
+        Next = "PublishSuccess"
+        Catch = [
+          {
+            ErrorEquals = ["States.ALL"]
+            ResultPath  = "$.error_info"
+            Next        = "PublishFailure"
+          }
+        ]
       }
       PublishSuccess = {
         Type     = "Task"
         Resource = "arn:aws:states:::sns:publish"
         Parameters = {
           TopicArn    = aws_sns_topic.caption_events.arn
-          Subject     = "Caption generation completed"
-          "Message.$" = "States.Format('Closed captions are ready for s3://{}/{}. Output bucket: s3://{}/{}', $.input_bucket, $.input_key, $.captions_bucket, $.output_prefix)"
+          Subject     = "Caption generation completed (English + Hindi)"
+          "Message.$" = "States.Format('Closed captions are ready for s3://{}/{}. Output bucket: s3://{}. English path: {} Hindi path: {}', $.input_bucket, $.input_key, $.captions_bucket, $.english_output_prefix, $.hindi_output_prefix)"
         }
         End = true
       }
@@ -270,7 +354,7 @@ resource "aws_sfn_state_machine" "caption_pipeline" {
         Parameters = {
           TopicArn    = aws_sns_topic.caption_events.arn
           Subject     = "Caption generation failed"
-          "Message.$" = "States.Format('Caption generation failed for s3://{}/{}: {}', $.input_bucket, $.input_key, $.job_details.TranscriptionJob.FailureReason)"
+          "Message.$" = "States.Format('Caption generation failed for s3://{}/{}: {}', $.input_bucket, $.input_key, $.error_info.Cause)"
         }
         Next = "WorkflowFailed"
       }
@@ -330,7 +414,7 @@ resource "aws_lambda_function" "video_ingest_trigger" {
   environment {
     variables = {
       STATE_MACHINE_ARN = aws_sfn_state_machine.caption_pipeline.arn
-      CAPTIONS_BUCKET   = aws_s3_bucket.captions_output.bucket
+      CAPTIONS_BUCKET   = aws_s3_bucket.video_input.bucket
       OUTPUT_PREFIX     = var.output_prefix
     }
   }
@@ -343,11 +427,11 @@ resource "aws_lambda_permission" "allow_s3" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.video_ingest_trigger.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.video_input.arn
+  source_arn    = aws_s3_bucket.captions_output.arn
 }
 
 resource "aws_s3_bucket_notification" "video_uploads" {
-  bucket = aws_s3_bucket.video_input.id
+  bucket = aws_s3_bucket.captions_output.id
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.video_ingest_trigger.arn

@@ -41,22 +41,28 @@ def lambda_handler(event, context):
             skipped.append(object_key)
             continue
 
-        job_name = build_job_name(object_key)
+        job_base_name = build_job_name(object_key)
+        english_job_name = f"{job_base_name}-en"
+        hindi_job_name = f"{job_base_name}-hi"
+        execution_name = f"exec-{job_base_name}"[:80]
         execution_input = {
-            "job_name": job_name,
+            "job_name": job_base_name,
             "input_bucket": bucket,
             "input_key": object_key,
             "media_uri": f"s3://{bucket}/{object_key}",
             "captions_bucket": captions_bucket,
-            "output_prefix": f"{output_prefix}/{job_name}/",
+            "english_job_name": english_job_name,
+            "hindi_job_name": hindi_job_name,
+            "english_output_prefix": f"{output_prefix}/{job_base_name}/english/",
+            "hindi_output_prefix": f"{output_prefix}/{job_base_name}/hindi/",
         }
 
         step_functions.start_execution(
             stateMachineArn=state_machine_arn,
-            name=job_name,
+            name=execution_name,
             input=json.dumps(execution_input),
         )
-        started.append(job_name)
+        started.extend([english_job_name, hindi_job_name])
 
     return {
         "started_jobs": started,
