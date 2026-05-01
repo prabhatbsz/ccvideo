@@ -37,7 +37,7 @@ data "aws_iam_policy_document" "captions_public_read" {
     actions = ["s3:GetObject"]
 
     resources = [
-      "${aws_s3_bucket.captions_output.arn}/*"
+      "${local.captions_output_bucket_arn}/*"
     ]
   }
 }
@@ -60,14 +60,17 @@ locals {
     var.tags
   )
 
-  input_bucket_name    = coalesce(var.input_bucket_name, lower("${local.name_prefix}-${data.aws_caller_identity.current.account_id}-input"))
-  captions_bucket_name = coalesce(var.captions_bucket_name, lower("${local.name_prefix}-${data.aws_caller_identity.current.account_id}-captions"))
-  sns_topic_name       = "${local.name_prefix}-caption-events"
-  lambda_name          = "${local.name_prefix}-video-trigger"
-  step_function_name   = "${local.name_prefix}-caption-pipeline"
+  input_bucket_name        = coalesce(var.input_bucket_name, lower("${local.name_prefix}-${data.aws_caller_identity.current.account_id}-input"))
+  captions_bucket_name     = coalesce(var.captions_bucket_name, lower("${local.name_prefix}-${data.aws_caller_identity.current.account_id}-captions"))
+  sns_topic_name           = "${local.name_prefix}-caption-events"
+  lambda_name              = "${local.name_prefix}-video-trigger"
+  step_function_name       = "${local.name_prefix}-caption-pipeline"
+  step_functions_role_name = coalesce(var.existing_step_functions_role_name, "${local.step_function_name}-role")
+  lambda_role_name         = coalesce(var.existing_lambda_role_name, "${local.lambda_name}-role")
 }
 
 resource "aws_s3_bucket" "video_input" {
+  count         = var.create_input_bucket ? 1 : 0
   bucket        = local.input_bucket_name
   force_destroy = var.force_destroy
 
@@ -78,6 +81,7 @@ resource "aws_s3_bucket" "video_input" {
 }
 
 resource "aws_s3_bucket" "captions_output" {
+  count         = var.create_captions_bucket ? 1 : 0
   bucket        = local.captions_bucket_name
   force_destroy = var.force_destroy
 
@@ -87,8 +91,28 @@ resource "aws_s3_bucket" "captions_output" {
   })
 }
 
+data "aws_s3_bucket" "video_input_existing" {
+  count  = var.create_input_bucket ? 0 : 1
+  bucket = local.input_bucket_name
+}
+
+data "aws_s3_bucket" "captions_output_existing" {
+  count  = var.create_captions_bucket ? 0 : 1
+  bucket = local.captions_bucket_name
+}
+
+locals {
+  video_input_bucket_id   = var.create_input_bucket ? aws_s3_bucket.video_input[0].id : data.aws_s3_bucket.video_input_existing[0].id
+  video_input_bucket_arn  = var.create_input_bucket ? aws_s3_bucket.video_input[0].arn : data.aws_s3_bucket.video_input_existing[0].arn
+  video_input_bucket_name = var.create_input_bucket ? aws_s3_bucket.video_input[0].bucket : data.aws_s3_bucket.video_input_existing[0].bucket
+
+  captions_output_bucket_id   = var.create_captions_bucket ? aws_s3_bucket.captions_output[0].id : data.aws_s3_bucket.captions_output_existing[0].id
+  captions_output_bucket_arn  = var.create_captions_bucket ? aws_s3_bucket.captions_output[0].arn : data.aws_s3_bucket.captions_output_existing[0].arn
+  captions_output_bucket_name = var.create_captions_bucket ? aws_s3_bucket.captions_output[0].bucket : data.aws_s3_bucket.captions_output_existing[0].bucket
+}
+
 resource "aws_s3_bucket_versioning" "video_input" {
-  bucket = aws_s3_bucket.video_input.id
+  bucket = local.video_input_bucket_id
 
   versioning_configuration {
     status = "Suspended"
@@ -96,7 +120,7 @@ resource "aws_s3_bucket_versioning" "video_input" {
 }
 
 resource "aws_s3_bucket_versioning" "captions_output" {
-  bucket = aws_s3_bucket.captions_output.id
+  bucket = local.captions_output_bucket_id
 
   versioning_configuration {
     status = "Suspended"
@@ -104,7 +128,7 @@ resource "aws_s3_bucket_versioning" "captions_output" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "video_input" {
-  bucket = aws_s3_bucket.video_input.id
+  bucket = local.video_input_bucket_id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -114,7 +138,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "video_input" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "captions_output" {
-  bucket = aws_s3_bucket.captions_output.id
+  bucket = local.captions_output_bucket_id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -124,7 +148,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "captions_output" 
 }
 
 resource "aws_s3_bucket_public_access_block" "video_input" {
-  bucket = aws_s3_bucket.video_input.id
+  bucket = local.video_input_bucket_id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -133,7 +157,7 @@ resource "aws_s3_bucket_public_access_block" "video_input" {
 }
 
 resource "aws_s3_bucket_public_access_block" "captions_output" {
-  bucket = aws_s3_bucket.captions_output.id
+  bucket = local.captions_output_bucket_id
 
   block_public_acls       = true
   block_public_policy     = false
@@ -144,7 +168,7 @@ resource "aws_s3_bucket_public_access_block" "captions_output" {
 resource "aws_s3_bucket_policy" "captions_output_public_read" {
   count = var.enable_public_captions_read ? 1 : 0
 
-  bucket = aws_s3_bucket.captions_output.id
+  bucket = local.captions_output_bucket_id
   policy = data.aws_iam_policy_document.captions_public_read[0].json
 
   depends_on = [aws_s3_bucket_public_access_block.captions_output]
@@ -167,15 +191,25 @@ resource "aws_sns_topic_subscription" "email" {
 }
 
 resource "aws_iam_role" "step_functions" {
-  name               = "${local.step_function_name}-role"
+  count              = var.create_step_functions_role ? 1 : 0
+  name               = local.step_functions_role_name
   assume_role_policy = data.aws_iam_policy_document.step_functions_assume_role.json
 
   tags = local.default_tags
 }
 
+data "aws_iam_role" "step_functions_existing" {
+  count = var.create_step_functions_role ? 0 : 1
+  name  = local.step_functions_role_name
+}
+
+locals {
+  step_functions_role_arn = var.create_step_functions_role ? aws_iam_role.step_functions[0].arn : data.aws_iam_role.step_functions_existing[0].arn
+}
+
 resource "aws_iam_role_policy" "step_functions" {
   name = "${local.step_function_name}-policy"
-  role = aws_iam_role.step_functions.id
+  role = local.step_functions_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -201,7 +235,7 @@ resource "aws_iam_role_policy" "step_functions" {
 
 resource "aws_sfn_state_machine" "caption_pipeline" {
   name     = local.step_function_name
-  role_arn = aws_iam_role.step_functions.arn
+  role_arn = local.step_functions_role_arn
 
   definition = jsonencode({
     Comment = "Automated caption generation workflow for uploaded videos"
@@ -369,15 +403,25 @@ resource "aws_sfn_state_machine" "caption_pipeline" {
 }
 
 resource "aws_iam_role" "lambda" {
-  name               = "${local.lambda_name}-role"
+  count              = var.create_lambda_role ? 1 : 0
+  name               = local.lambda_role_name
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 
   tags = local.default_tags
 }
 
+data "aws_iam_role" "lambda_existing" {
+  count = var.create_lambda_role ? 0 : 1
+  name  = local.lambda_role_name
+}
+
+locals {
+  lambda_role_arn = var.create_lambda_role ? aws_iam_role.lambda[0].arn : data.aws_iam_role.lambda_existing[0].arn
+}
+
 resource "aws_iam_role_policy" "lambda" {
   name = "${local.lambda_name}-policy"
-  role = aws_iam_role.lambda.id
+  role = local.lambda_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -404,7 +448,7 @@ resource "aws_iam_role_policy" "lambda" {
 
 resource "aws_lambda_function" "video_ingest_trigger" {
   function_name    = local.lambda_name
-  role             = aws_iam_role.lambda.arn
+  role             = local.lambda_role_arn
   handler          = "trigger.lambda_handler"
   runtime          = "python3.12"
   filename         = data.archive_file.lambda_zip.output_path
@@ -414,7 +458,7 @@ resource "aws_lambda_function" "video_ingest_trigger" {
   environment {
     variables = {
       STATE_MACHINE_ARN = aws_sfn_state_machine.caption_pipeline.arn
-      CAPTIONS_BUCKET   = aws_s3_bucket.video_input.bucket
+      CAPTIONS_BUCKET   = local.video_input_bucket_name
       OUTPUT_PREFIX     = var.output_prefix
     }
   }
@@ -427,11 +471,11 @@ resource "aws_lambda_permission" "allow_s3" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.video_ingest_trigger.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.captions_output.arn
+  source_arn    = local.captions_output_bucket_arn
 }
 
 resource "aws_s3_bucket_notification" "video_uploads" {
-  bucket = aws_s3_bucket.captions_output.id
+  bucket = local.captions_output_bucket_id
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.video_ingest_trigger.arn

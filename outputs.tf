@@ -1,11 +1,11 @@
 output "video_input_bucket_name" {
   description = "S3 bucket name where generated subtitle files are written."
-  value       = aws_s3_bucket.video_input.bucket
+  value       = local.video_input_bucket_name
 }
 
 output "captions_output_bucket_name" {
   description = "S3 bucket name where video uploads trigger caption generation."
-  value       = aws_s3_bucket.captions_output.bucket
+  value       = local.captions_output_bucket_name
 }
 
 output "caption_pipeline_state_machine_arn" {

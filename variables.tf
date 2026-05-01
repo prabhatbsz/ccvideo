@@ -16,10 +16,22 @@ variable "input_bucket_name" {
   default     = null
 }
 
+variable "create_input_bucket" {
+  description = "Create the input bucket when true; when false, Terraform reuses an existing bucket with input_bucket_name."
+  type        = bool
+  default     = true
+}
+
 variable "captions_bucket_name" {
   description = "Optional custom S3 bucket name for generated caption files. Leave null to auto-generate a globally unique name."
   type        = string
   default     = null
+}
+
+variable "create_captions_bucket" {
+  description = "Create the captions bucket when true; when false, Terraform reuses an existing bucket with captions_bucket_name."
+  type        = bool
+  default     = true
 }
 
 variable "notification_email" {
@@ -44,6 +56,30 @@ variable "polling_wait_seconds" {
   description = "Delay between Step Functions polling attempts while waiting for Amazon Transcribe to finish."
   type        = number
   default     = 30
+}
+
+variable "create_step_functions_role" {
+  description = "Create the Step Functions IAM role when true; when false, reuse existing_step_functions_role_name."
+  type        = bool
+  default     = true
+}
+
+variable "existing_step_functions_role_name" {
+  description = "Existing Step Functions IAM role name to reuse when create_step_functions_role is false."
+  type        = string
+  default     = null
+}
+
+variable "create_lambda_role" {
+  description = "Create the Lambda IAM role when true; when false, reuse existing_lambda_role_name."
+  type        = bool
+  default     = true
+}
+
+variable "existing_lambda_role_name" {
+  description = "Existing Lambda IAM role name to reuse when create_lambda_role is false."
+  type        = string
+  default     = null
 }
 
 variable "force_destroy" {
