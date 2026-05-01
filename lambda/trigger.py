@@ -39,6 +39,12 @@ def lambda_handler(event, context):
     state_machine_arn = os.environ["STATE_MACHINE_ARN"]
     captions_bucket = os.environ["CAPTIONS_BUCKET"]
     output_prefix = os.environ.get("OUTPUT_PREFIX", "captions/").strip("/")
+    print(
+        "Config: "
+        f"state_machine_arn={state_machine_arn}, "
+        f"captions_bucket={captions_bucket}, "
+        f"output_prefix={output_prefix}"
+    )
 
     records = event.get("Records", [])
     logger.info("Received event with %d record(s)", len(records))
