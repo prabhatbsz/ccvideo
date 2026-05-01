@@ -44,17 +44,6 @@ data "aws_iam_policy_document" "captions_public_read" {
 
 data "aws_iam_policy_document" "transcribe_output_bucket" {
   statement {
-    sid    = "AllowTranscribeGetObject"
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["transcribe.amazonaws.com"]
-    }
-    actions   = ["s3:GetObject"]
-    resources = ["${local.captions_output_bucket_arn}/*"]
-  }
-
-  statement {
     sid    = "AllowTranscribePutObject"
     effect = "Allow"
     principals {

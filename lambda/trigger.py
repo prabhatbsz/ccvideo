@@ -9,7 +9,18 @@ from urllib.parse import unquote_plus
 import boto3
 
 
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".mov",
+    ".m4v",
+    ".mkv",
+    ".avi",
+    ".webm",
+    ".mp3",
+    ".wav",
+    ".flac",
+    ".m4a",
+}
 
 step_functions = boto3.client("stepfunctions")
 logger = logging.getLogger()
