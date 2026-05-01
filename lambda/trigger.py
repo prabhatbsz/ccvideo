@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import unquote_plus
 
 import boto3
+from botocore.exceptions import ClientError
 
 
 VIDEO_EXTENSIONS = {
@@ -41,6 +42,7 @@ def lambda_handler(event, context):
 
     records = event.get("Records", [])
     logger.info("Received event with %d record(s)", len(records))
+    print(f"Received event with {len(records)} record(s)")
 
     started = []
     skipped = []
@@ -48,6 +50,7 @@ def lambda_handler(event, context):
     for record in records:
         if record.get("eventSource") != "aws:s3":
             logger.info("Skipping non-S3 event source: %s", record.get("eventSource"))
+            print(f"Skipping non-S3 event source: {record.get('eventSource')}")
             continue
 
         bucket = record["s3"]["bucket"]["name"]
@@ -56,10 +59,12 @@ def lambda_handler(event, context):
         extension = Path(object_key).suffix.lower()
 
         logger.info("Processing object s3://%s/%s (extension=%s)", bucket, object_key, extension)
+        print(f"Processing object s3://{bucket}/{object_key} (extension={extension})")
 
         if extension not in VIDEO_EXTENSIONS:
             skipped.append(object_key)
             logger.info("Skipping unsupported file type for key: %s", object_key)
+            print(f"Skipping unsupported file type for key: {object_key}")
             continue
 
         job_base_name = build_job_name(object_key)
@@ -78,20 +83,32 @@ def lambda_handler(event, context):
             "hindi_output_prefix": f"{output_prefix}/{job_base_name}/hindi/",
         }
 
-        step_functions.start_execution(
-            stateMachineArn=state_machine_arn,
-            name=execution_name,
-            input=json.dumps(execution_input),
-        )
+        try:
+            response = step_functions.start_execution(
+                stateMachineArn=state_machine_arn,
+                name=execution_name,
+                input=json.dumps(execution_input),
+            )
+        except ClientError as exc:
+            logger.exception("Failed to start Step Functions execution for %s", object_key)
+            print(f"ERROR: Failed to start Step Functions execution for {object_key}: {exc}")
+            raise
+
         logger.info(
             "Started Step Functions execution '%s' for object s3://%s/%s",
             execution_name,
             bucket,
             object_key,
         )
+        print(
+            "Started Step Functions execution "
+            f"'{execution_name}' for object s3://{bucket}/{object_key}; "
+            f"executionArn={response.get('executionArn', 'n/a')}"
+        )
         started.extend([english_job_name, hindi_job_name])
 
     logger.info("Lambda processing summary: started_jobs=%s skipped_objects=%s", started, skipped)
+    print(f"Lambda processing summary: started_jobs={started} skipped_objects={skipped}")
 
     return {
         "started_jobs": started,
